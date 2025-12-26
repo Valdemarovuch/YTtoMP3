@@ -6,6 +6,8 @@ import os
 from pathlib import Path
 import threading
 import ssl
+import urllib.request
+import socket
 
 try:
     ssl._create_default_https_context = ssl._create_unverified_context
@@ -15,6 +17,14 @@ except Exception as e:
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
+def check_internet_connection():
+    """Перевірка інтернет-з'єднання"""
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=3)
+        return True
+    except OSError:
+        return False
+
 class YouTubeToMP3Converter(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -22,9 +32,9 @@ class YouTubeToMP3Converter(ctk.CTk):
         self.colors = {
             "bg": "#1a1a1a",
             "text_primary": "#ffffff",
-            "text_secondary": "#666666",
+            "text_secondary": "#ffffff",
             "button": "#8E8E93",
-            "button_hover": "#6E6E73",
+            "button_hover": "#ffffff",
             "border": "#E5E5E7",
             "success": "#34C759",
             "error": "#FF3B30"
@@ -34,12 +44,20 @@ class YouTubeToMP3Converter(ctk.CTk):
         self.geometry("900x600")
         self.resizable(False, False)
         
+        self.update_idletasks()
+        width = 900
+        height = 750
+        x = (self.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.winfo_screenheight() // 2) - (height // 2)
+        self.geometry(f'{width}x{height}+{x}+{y}')
+        
         self.configure(fg_color=self.colors["bg"])
         
-        # Якість за замовчуванням
         self.selected_quality = "320"
         
-        # Папка для завантаження за замовчуванням
+        self.is_downloading = False
+        self.cancel_download = False
+        
         self.download_folder = str(Path.home() / "Downloads" / "YouTube_MP3")
         try:
             os.makedirs(self.download_folder, exist_ok=True)
@@ -77,7 +95,7 @@ class YouTubeToMP3Converter(ctk.CTk):
         
         subtitle_label = ctk.CTkLabel(
             header_frame, 
-            text="Конвертуйте відео в аудіо за лічені секунди", 
+            text="Convert videos to audio in seconds", 
             font=ctk.CTkFont(size=14),
             text_color=self.colors["text_secondary"]
         )
@@ -88,7 +106,7 @@ class YouTubeToMP3Converter(ctk.CTk):
         
         ctk.CTkLabel(
             url_container, 
-            text="URL відео з YouTube", 
+            text="YouTube Video URL", 
             font=ctk.CTkFont(size=13),
             text_color=self.colors["text_primary"],
             anchor="w"
@@ -106,28 +124,35 @@ class YouTubeToMP3Converter(ctk.CTk):
         )
         self.url_entry.pack(fill="x")
         self.url_entry.bind("<Return>", lambda e: self.start_download_thread())
+        self.url_entry.bind("<KeyRelease>", lambda e: self.validate_url())
+        
+        self.preview_frame = ctk.CTkFrame(url_container, fg_color="transparent")
+        self.preview_label = ctk.CTkLabel(
+            self.preview_frame,
+            text="",
+            font=ctk.CTkFont(size=11),
+            text_color=self.colors["text_secondary"],
+            anchor="w"
+        )
+        self.preview_label.pack(fill="x", pady=(5, 0))
         
         self.after(500, self.check_clipboard_on_start)
 
-        # === QUALITY SELECTOR ===
         quality_container = ctk.CTkFrame(self, fg_color="transparent")
         quality_container.grid(row=2, column=0, padx=200, pady=(15, 0), sticky="ew")
         
-        # Заголовок
         ctk.CTkLabel(
             quality_container,
-            text="Оберіть якість",
+            text="Select Quality",
             font=ctk.CTkFont(size=13),
             text_color=self.colors["text_primary"],
             anchor="w"
         ).pack(fill="x", pady=(0, 8))
         
-        # Контейнер для кнопок якості
         quality_buttons_frame = ctk.CTkFrame(quality_container, fg_color="transparent")
         quality_buttons_frame.pack(fill="x")
         quality_buttons_frame.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
         
-        # Кнопки якості
         self.quality_buttons = {}
         qualities = ["320", "256", "192", "128", "64"]
         
@@ -150,10 +175,12 @@ class YouTubeToMP3Converter(ctk.CTk):
 
         button_container = ctk.CTkFrame(self, fg_color="transparent")
         button_container.grid(row=3, column=0, padx=200, pady=15, sticky="ew")
+        button_container.grid_columnconfigure(0, weight=1)
+        button_container.grid_columnconfigure(1, weight=0)
         
         self.download_btn = ctk.CTkButton(
             button_container, 
-            text="Конвертувати в MP3", 
+            text="⬇  Convert to MP3", 
             font=ctk.CTkFont(size=16),
             height=50,
             corner_radius=8,
@@ -162,11 +189,41 @@ class YouTubeToMP3Converter(ctk.CTk):
             hover_color=self.colors["button_hover"],
             border_width=0
         )
-        self.download_btn.pack(fill="x")
+        self.download_btn.grid(row=0, column=0, sticky="ew", padx=(0, 5))
+        
+        self.cancel_btn = ctk.CTkButton(
+            button_container,
+            text="✕",
+            font=ctk.CTkFont(size=16),
+            width=50,
+            height=50,
+            corner_radius=8,
+            command=self.cancel_download_action,
+            fg_color=self.colors["error"],
+            hover_color="#CC2E26",
+            border_width=0,
+            state="disabled"
+        )
+        self.cancel_btn.grid(row=0, column=1, sticky="ew")
+        
+        self.folder_btn = ctk.CTkButton(
+            button_container,
+            text="📁 Change Folder",
+            font=ctk.CTkFont(size=12),
+            height=30,
+            corner_radius=8,
+            command=self.browse_folder,
+            fg_color="transparent",
+            border_width=1,
+            border_color=self.colors["border"],
+            text_color=self.colors["text_secondary"],
+            hover_color=self.colors["border"]
+        )
+        self.folder_btn.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
         
         self.open_folder_btn = ctk.CTkButton(
             button_container,
-            text="📁 Відкрити папку з файлами",
+            text="📁 Open Download Folder",
             font=ctk.CTkFont(size=13),
             height=35,
             corner_radius=8,
@@ -178,11 +235,10 @@ class YouTubeToMP3Converter(ctk.CTk):
             hover_color=self.colors["border"]
         )
 
-        progress_container = ctk.CTkFrame(self, fg_color="transparent")
-        progress_container.grid(row=4, column=0, padx=200, pady=10, sticky="ew")
+        self.progress_container = ctk.CTkFrame(self, fg_color="transparent")
         
         self.progress_bar = ctk.CTkProgressBar(
-            progress_container,
+            self.progress_container,
             height=6,
             corner_radius=3,
             progress_color=self.colors["success"],
@@ -192,7 +248,7 @@ class YouTubeToMP3Converter(ctk.CTk):
         self.progress_bar.set(0)
         
         self.status_label = ctk.CTkLabel(
-            progress_container,
+            self.progress_container,
             text="",
             font=ctk.CTkFont(size=12),
             text_color=self.colors["text_secondary"]
@@ -211,33 +267,83 @@ class YouTubeToMP3Converter(ctk.CTk):
         feat1.grid(row=0, column=0, padx=20)
         ctk.CTkLabel(feat1, text="320kbps", font=ctk.CTkFont(size=20, weight="bold"), 
                     text_color=self.colors["text_primary"]).pack()
-        ctk.CTkLabel(feat1, text="Максимальна якість", font=ctk.CTkFont(size=12), 
+        ctk.CTkLabel(feat1, text="Maximum Quality", font=ctk.CTkFont(size=12), 
                     text_color=self.colors["text_secondary"]).pack()
         
         feat2 = ctk.CTkFrame(features_frame, fg_color="transparent")
         feat2.grid(row=0, column=1, padx=20)
-        ctk.CTkLabel(feat2, text="Швидко", font=ctk.CTkFont(size=20, weight="bold"), 
+        ctk.CTkLabel(feat2, text="Fast", font=ctk.CTkFont(size=20, weight="bold"), 
                     text_color=self.colors["text_primary"]).pack()
-        ctk.CTkLabel(feat2, text="До 60 сек", font=ctk.CTkFont(size=12), 
+        ctk.CTkLabel(feat2, text="Up to 60 sec", font=ctk.CTkFont(size=12), 
                     text_color=self.colors["text_secondary"]).pack()
         
         feat3 = ctk.CTkFrame(features_frame, fg_color="transparent")
         feat3.grid(row=0, column=2, padx=20)
-        ctk.CTkLabel(feat3, text="Безкоштовно", font=ctk.CTkFont(size=20, weight="bold"), 
+        ctk.CTkLabel(feat3, text="Free", font=ctk.CTkFont(size=20, weight="bold"), 
                     text_color=self.colors["text_primary"]).pack()
-        ctk.CTkLabel(feat3, text="Без обмежень", font=ctk.CTkFont(size=12), 
+        ctk.CTkLabel(feat3, text="No Limits", font=ctk.CTkFont(size=12), 
                     text_color=self.colors["text_secondary"]).pack()
+        
+        statusbar_frame = ctk.CTkFrame(self, fg_color=self.colors["bg"], height=30)
+        statusbar_frame.grid(row=7, column=0, sticky="ew", padx=0, pady=0)
+        statusbar_frame.grid_columnconfigure(0, weight=1)
+        
+        self.folder_path_label = ctk.CTkLabel(
+            statusbar_frame,
+            text=f"📂 Folder: {self.download_folder}",
+            font=ctk.CTkFont(size=10),
+            text_color=self.colors["text_secondary"],
+            anchor="w"
+        )
+        self.folder_path_label.grid(row=0, column=0, sticky="w", padx=15, pady=5)
 
     def browse_folder(self):
+        """Select download folder"""
         folder = filedialog.askdirectory(initialdir=self.download_folder)
         if folder:
             self.download_folder = folder
+            self.folder_path_label.configure(text=f"📂 Folder: {self.download_folder}")
+            self.update_status("Folder changed", self.colors["success"])
+            self.after(2000, lambda: self.update_status(""))
+    
+    def validate_url(self):
+        """Валідація YouTube URL"""
+        url = self.url_entry.get().strip()
+        if not url:
+            self.url_entry.configure(border_color=self.colors["border"])
+            self.preview_frame.pack_forget()
+            return
+        
+        if "youtube.com" in url or "youtu.be" in url:
+            self.url_entry.configure(border_color=self.colors["success"])
+            threading.Thread(target=self.fetch_video_info, args=(url,), daemon=True).start()
+        else:
+            self.url_entry.configure(border_color=self.colors["error"])
+            self.preview_frame.pack_forget()
+    
+    def fetch_video_info(self, url):
+        """Fetch video information"""
+        try:
+            ydl_opts = {'quiet': True, 'no_warnings': True, 'skip_download': True}
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+                title = info.get('title', 'Unknown title')
+                duration = info.get('duration', 0)
+                author = info.get('uploader', 'Unknown author')
+                
+                minutes = duration // 60
+                seconds = duration % 60
+                
+                preview_text = f"📹 {title[:40]}... | 👤 {author} | ⏱ {minutes}:{seconds:02d}"
+                self.preview_label.configure(text=preview_text)
+                self.preview_frame.pack(fill="x", pady=(5, 0))
+        except:
+            self.preview_frame.pack_forget()
     
     def select_quality(self, quality):
         """Вибір якості MP3"""
         self.selected_quality = quality
         
-        # Оновлюємо стилі кнопок
         for q, btn in self.quality_buttons.items():
             if q == quality:
                 btn.configure(
@@ -257,19 +363,19 @@ class YouTubeToMP3Converter(ctk.CTk):
                 )
     
     def open_download_folder(self):
-        """Відкриває папку з завантаженими файлами"""
+        """Opens download folder"""
         try:
             import subprocess
             subprocess.run(['open', self.download_folder])
         except Exception as e:
             print(f"Error opening folder: {e}")
-            messagebox.showerror("Помилка", f"Не вдалося відкрити папку: {self.download_folder}")
+            messagebox.showerror("Error", f"Failed to open folder: {self.download_folder}")
 
     def check_clipboard(self):
         pass
     
     def check_clipboard_on_start(self):
-        """Перевіряє буфер обміну при запуску і показує підказку якщо є YouTube посилання"""
+        """Check clipboard for YouTube links on startup"""
         try:
             if not self.winfo_exists():
                 return
@@ -277,13 +383,44 @@ class YouTubeToMP3Converter(ctk.CTk):
             clipboard_content = self.clipboard_get()
             if clipboard_content and ("youtube.com" in clipboard_content or "youtu.be" in clipboard_content):
                 short_url = clipboard_content[:50] + "..." if len(clipboard_content) > 50 else clipboard_content
-                self.url_entry.configure(placeholder_text=f"💡 Натисніть Cmd+V: {short_url}")
+                self.url_entry.configure(placeholder_text=f"💡 Press Cmd+V: {short_url}")
         except tk.TclError:
             pass
         except Exception as e:
             print(f"Clipboard check error: {e}")
     
+    def cancel_download_action(self):
+        """Cancel download"""
+        self.cancel_download = True
+        self.update_status("Cancelled by user", self.colors["error"])
+        self.cancel_btn.configure(state="disabled")
+        self.download_btn.configure(state="normal", text="⬇  Convert to MP3")
+        self.progress_bar.set(0)
+        
+        self.after(2000, lambda: [
+            self.progress_container.grid_forget(),
+            self.update_status("")
+        ])
+    
     def start_download_thread(self):
+        if self.is_downloading:
+            return
+        
+        url = self.url_entry.get().strip()
+        if not url or ("youtube.com" not in url and "youtu.be" not in url):
+            self.update_status("Invalid YouTube URL", self.colors["error"])
+            self.url_entry.configure(border_color=self.colors["error"])
+            return
+        
+        if not check_internet_connection():
+            self.update_status("❌ No internet connection. Check your connection", self.colors["error"])
+            messagebox.showerror(
+                "No Internet", 
+                "Failed to connect to the internet.\n\nCheck:\n• Wi-Fi or Ethernet connection\n• Network settings\n• Firewall"
+            )
+            return
+        
+        self.cancel_download = False
         thread = threading.Thread(target=self.download_mp3)
         thread.daemon = True
         thread.start()
@@ -309,26 +446,30 @@ class YouTubeToMP3Converter(ctk.CTk):
                 except:
                     pass
                 
-                self.update_status(f"Завантаження {percent_str} • {speed} • ETA: {eta}", self.colors["text_secondary"])
+                self.update_status(f"Downloading {percent_str} • {speed} • ETA: {eta}", self.colors["text_secondary"])
             except Exception as e:
                 print(f"Progress error: {e}")
                 pass
         elif d['status'] == 'finished':
             self.progress_bar.set(1.0)
-            self.update_status("Конвертація в MP3 та додавання metadata...", self.colors["text_secondary"])
+            self.update_status("Converting to MP3 and adding metadata...", self.colors["text_secondary"])
         elif d['status'] == 'processing':
-            self.update_status("Обробка файлу...", self.colors["text_secondary"])
+            self.update_status("Processing file...", self.colors["text_secondary"])
 
     def download_mp3(self):
         url = self.url_entry.get().strip()
         
         if not url:
-            self.update_status("Будь ласка, введіть посилання YouTube", self.colors["error"])
+            self.update_status("Please enter a YouTube URL", self.colors["error"])
             return
         
-        self.download_btn.configure(state="disabled", text="Завантаження...")
+        self.is_downloading = True
+        self.download_btn.configure(state="disabled", text="⏳ Downloading...")
+        self.cancel_btn.configure(state="normal")
+        
+        self.progress_container.grid(row=4, column=0, padx=200, pady=10, sticky="ew")
         self.progress_bar.set(0)
-        self.update_status("Підготовка до завантаження...", self.colors["text_secondary"])
+        self.update_status("Preparing download...", self.colors["text_secondary"])
         
         try:
             download_path = self.download_folder
@@ -363,12 +504,22 @@ class YouTubeToMP3Converter(ctk.CTk):
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                if self.cancel_download:
+                    return
+                
                 info = ydl.extract_info(url, download=True)
+                
+                if self.cancel_download:
+                    return
+                
                 filename = ydl.prepare_filename(info)
                 title = info.get('title', 'audio')
             
+            if self.cancel_download:
+                return
+            
             self.progress_bar.set(1.0)
-            self.update_status(f"✓ Готово! Збережено: {title[:50]}", self.colors["success"])
+            self.update_status(f"✓ Done! Saved: {title[:50]}", self.colors["success"])
 
             self.open_folder_btn.pack(fill="x", pady=(10, 0))
 
@@ -376,17 +527,46 @@ class YouTubeToMP3Converter(ctk.CTk):
                 self.url_entry.delete(0, tk.END),
                 self.update_status(""),
                 self.progress_bar.set(0),
+                self.progress_container.grid_forget(),
                 self.open_folder_btn.pack_forget()
             ])
             
         except Exception as e:
-            self.progress_bar.set(0)
-            error_msg = str(e)[:60]
-            self.update_status(f"Помилка: {error_msg}", self.colors["error"])
-            print(e)
-        
+            if not self.cancel_download:
+                self.progress_bar.set(0)
+                error_str = str(e).lower()
+                
+                if "private" in error_str or "unavailable" in error_str:
+                    error_msg = "Video unavailable or private"
+                elif "copyright" in error_str:
+                    error_msg = "Video is copyrighted"
+                elif "nodename" in error_str or "network" in error_str or "connection" in error_str or "errno 8" in error_str:
+                    error_msg = "❌ Connection problem"
+                    self.update_status(error_msg, self.colors["error"])
+                    retry = messagebox.askyesno(
+                        "Connection Error",
+                        "Failed to connect to YouTube.\n\nPossible causes:\n• No internet connection\n• DNS problems\n• YouTube unavailable\n\nTry again?",
+                        icon='warning'
+                    )
+                    if retry:
+                        self.after(500, self.start_download_thread)
+                    return
+                elif "age" in error_str:
+                    error_msg = "Authorization required (age restrictions)"
+                else:
+                    error_msg = str(e)[:60]
+                
+                self.update_status(f"❌ Error: {error_msg}", self.colors["error"])
+                print(f"Download error: {e}")                
+                self.after(5000, lambda: [
+                    self.progress_container.grid_forget(),
+                    self.update_status("")
+                ])        
         finally:
-            self.download_btn.configure(state="normal", text="⬇  Конвертувати в MP3")
+            self.is_downloading = False
+            self.cancel_download = False
+            self.cancel_btn.configure(state="disabled")
+            self.download_btn.configure(state="normal", text="⬇  Convert to MP3")
 
 
 if __name__ == "__main__":

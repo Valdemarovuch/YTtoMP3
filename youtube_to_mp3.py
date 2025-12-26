@@ -31,11 +31,15 @@ class YouTubeToMP3Converter(ctk.CTk):
         }
 
         self.title("YouTube to MP3")
-        self.geometry("700x550")
+        self.geometry("900x600")
         self.resizable(False, False)
         
         self.configure(fg_color=self.colors["bg"])
         
+        # Якість за замовчуванням
+        self.selected_quality = "320"
+        
+        # Папка для завантаження за замовчуванням
         self.download_folder = str(Path.home() / "Downloads" / "YouTube_MP3")
         try:
             os.makedirs(self.download_folder, exist_ok=True)
@@ -105,8 +109,47 @@ class YouTubeToMP3Converter(ctk.CTk):
         
         self.after(500, self.check_clipboard_on_start)
 
+        # === QUALITY SELECTOR ===
+        quality_container = ctk.CTkFrame(self, fg_color="transparent")
+        quality_container.grid(row=2, column=0, padx=200, pady=(15, 0), sticky="ew")
+        
+        # Заголовок
+        ctk.CTkLabel(
+            quality_container,
+            text="Оберіть якість",
+            font=ctk.CTkFont(size=13),
+            text_color=self.colors["text_primary"],
+            anchor="w"
+        ).pack(fill="x", pady=(0, 8))
+        
+        # Контейнер для кнопок якості
+        quality_buttons_frame = ctk.CTkFrame(quality_container, fg_color="transparent")
+        quality_buttons_frame.pack(fill="x")
+        quality_buttons_frame.grid_columnconfigure((0, 1, 2, 3, 4), weight=1)
+        
+        # Кнопки якості
+        self.quality_buttons = {}
+        qualities = ["320", "256", "192", "128", "64"]
+        
+        for idx, quality in enumerate(qualities):
+            btn = ctk.CTkButton(
+                quality_buttons_frame,
+                text=f"{quality} kbps",
+                font=ctk.CTkFont(size=13),
+                height=38,
+                corner_radius=8,
+                command=lambda q=quality: self.select_quality(q),
+                fg_color=self.colors["button"] if quality == "320" else "transparent",
+                hover_color=self.colors["button_hover"],
+                border_width=1,
+                border_color=self.colors["border"],
+                text_color="white" if quality == "320" else self.colors["text_secondary"]
+            )
+            btn.grid(row=0, column=idx, padx=3, sticky="ew")
+            self.quality_buttons[quality] = btn
+
         button_container = ctk.CTkFrame(self, fg_color="transparent")
-        button_container.grid(row=2, column=0, padx=200, pady=15, sticky="ew")
+        button_container.grid(row=3, column=0, padx=200, pady=15, sticky="ew")
         
         self.download_btn = ctk.CTkButton(
             button_container, 
@@ -136,7 +179,7 @@ class YouTubeToMP3Converter(ctk.CTk):
         )
 
         progress_container = ctk.CTkFrame(self, fg_color="transparent")
-        progress_container.grid(row=3, column=0, padx=200, pady=10, sticky="ew")
+        progress_container.grid(row=4, column=0, padx=200, pady=10, sticky="ew")
         
         self.progress_bar = ctk.CTkProgressBar(
             progress_container,
@@ -157,10 +200,10 @@ class YouTubeToMP3Converter(ctk.CTk):
         self.status_label.pack()
 
         how_frame = ctk.CTkFrame(self, fg_color="transparent")
-        how_frame.grid(row=4, column=0, padx=200, pady=(30, 20), sticky="ew")
+        how_frame.grid(row=5, column=0, padx=200, pady=(30, 20), sticky="ew")
         
         features_frame = ctk.CTkFrame(self, fg_color="transparent")
-        features_frame.grid(row=5, column=0, padx=100, pady=(20, 30), sticky="ew")
+        features_frame.grid(row=6, column=0, padx=100, pady=(20, 30), sticky="ew")
         
         features_frame.grid_columnconfigure((0, 1, 2), weight=1)
         
@@ -189,6 +232,29 @@ class YouTubeToMP3Converter(ctk.CTk):
         folder = filedialog.askdirectory(initialdir=self.download_folder)
         if folder:
             self.download_folder = folder
+    
+    def select_quality(self, quality):
+        """Вибір якості MP3"""
+        self.selected_quality = quality
+        
+        # Оновлюємо стилі кнопок
+        for q, btn in self.quality_buttons.items():
+            if q == quality:
+                btn.configure(
+                    fg_color=self.colors["button"],
+                    text_color="white"
+                )
+            else:
+                btn.configure(
+                    fg_color="transparent",
+                    text_color=self.colors["text_secondary"]
+                )
+    
+    def open_download_folder(self,btn):
+                btn.configure(
+                    fg_color="transparent",
+                    text_color=self.colors["text_secondary"]
+                )
     
     def open_download_folder(self):
         """Відкриває папку з завантаженими файлами"""
@@ -274,7 +340,7 @@ class YouTubeToMP3Converter(ctk.CTk):
                     {
                         'key': 'FFmpegExtractAudio',
                         'preferredcodec': 'mp3',
-                        'preferredquality': '320',
+                        'preferredquality': self.selected_quality,
                     },
                     {
                         'key': 'FFmpegMetadata',

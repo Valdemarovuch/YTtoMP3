@@ -18,7 +18,7 @@ ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
 
 def check_internet_connection():
-    """Перевірка інтернет-з'єднання"""
+    """Check internet connection"""
     try:
         socket.create_connection(("8.8.8.8", 53), timeout=3)
         return True
@@ -32,7 +32,7 @@ class YouTubeToMP3Converter(ctk.CTk):
         self.colors = {
             "bg": "#1a1a1a",
             "text_primary": "#ffffff",
-            "text_secondary": "#ffffff",
+            "text_secondary": "#666666",
             "button": "#8E8E93",
             "button_hover": "#ffffff",
             "border": "#E5E5E7",
@@ -56,7 +56,6 @@ class YouTubeToMP3Converter(ctk.CTk):
         self.selected_quality = "320"
         
         self.is_downloading = False
-        self.cancel_download = False
         
         self.download_folder = str(Path.home() / "Downloads" / "YouTube_MP3")
         try:
@@ -175,8 +174,6 @@ class YouTubeToMP3Converter(ctk.CTk):
 
         button_container = ctk.CTkFrame(self, fg_color="transparent")
         button_container.grid(row=3, column=0, padx=200, pady=15, sticky="ew")
-        button_container.grid_columnconfigure(0, weight=1)
-        button_container.grid_columnconfigure(1, weight=0)
         
         self.download_btn = ctk.CTkButton(
             button_container, 
@@ -189,22 +186,7 @@ class YouTubeToMP3Converter(ctk.CTk):
             hover_color=self.colors["button_hover"],
             border_width=0
         )
-        self.download_btn.grid(row=0, column=0, sticky="ew", padx=(0, 5))
-        
-        self.cancel_btn = ctk.CTkButton(
-            button_container,
-            text="✕",
-            font=ctk.CTkFont(size=16),
-            width=50,
-            height=50,
-            corner_radius=8,
-            command=self.cancel_download_action,
-            fg_color=self.colors["error"],
-            hover_color="#CC2E26",
-            border_width=0,
-            state="disabled"
-        )
-        self.cancel_btn.grid(row=0, column=1, sticky="ew")
+        self.download_btn.pack(fill="x")
         
         self.folder_btn = ctk.CTkButton(
             button_container,
@@ -219,7 +201,7 @@ class YouTubeToMP3Converter(ctk.CTk):
             text_color=self.colors["text_secondary"],
             hover_color=self.colors["border"]
         )
-        self.folder_btn.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        self.folder_btn.pack(fill="x", pady=(8, 0))
         
         self.open_folder_btn = ctk.CTkButton(
             button_container,
@@ -255,11 +237,8 @@ class YouTubeToMP3Converter(ctk.CTk):
         )
         self.status_label.pack()
 
-        how_frame = ctk.CTkFrame(self, fg_color="transparent")
-        how_frame.grid(row=5, column=0, padx=200, pady=(30, 20), sticky="ew")
-        
         features_frame = ctk.CTkFrame(self, fg_color="transparent")
-        features_frame.grid(row=6, column=0, padx=100, pady=(20, 30), sticky="ew")
+        features_frame.grid(row=5, column=0, padx=100, pady=(20, 30), sticky="ew")
         
         features_frame.grid_columnconfigure((0, 1, 2), weight=1)
         
@@ -285,7 +264,7 @@ class YouTubeToMP3Converter(ctk.CTk):
                     text_color=self.colors["text_secondary"]).pack()
         
         statusbar_frame = ctk.CTkFrame(self, fg_color=self.colors["bg"], height=30)
-        statusbar_frame.grid(row=7, column=0, sticky="ew", padx=0, pady=0)
+        statusbar_frame.grid(row=6, column=0, sticky="ew", padx=0, pady=0)
         statusbar_frame.grid_columnconfigure(0, weight=1)
         
         self.folder_path_label = ctk.CTkLabel(
@@ -307,7 +286,7 @@ class YouTubeToMP3Converter(ctk.CTk):
             self.after(2000, lambda: self.update_status(""))
     
     def validate_url(self):
-        """Валідація YouTube URL"""
+        """Validate YouTube URL"""
         url = self.url_entry.get().strip()
         if not url:
             self.url_entry.configure(border_color=self.colors["border"])
@@ -341,7 +320,7 @@ class YouTubeToMP3Converter(ctk.CTk):
             self.preview_frame.pack_forget()
     
     def select_quality(self, quality):
-        """Вибір якості MP3"""
+        """Select MP3 quality"""
         self.selected_quality = quality
         
         for q, btn in self.quality_buttons.items():
@@ -356,12 +335,6 @@ class YouTubeToMP3Converter(ctk.CTk):
                     text_color=self.colors["text_secondary"]
                 )
     
-    def open_download_folder(self,btn):
-                btn.configure(
-                    fg_color="transparent",
-                    text_color=self.colors["text_secondary"]
-                )
-    
     def open_download_folder(self):
         """Opens download folder"""
         try:
@@ -370,9 +343,6 @@ class YouTubeToMP3Converter(ctk.CTk):
         except Exception as e:
             print(f"Error opening folder: {e}")
             messagebox.showerror("Error", f"Failed to open folder: {self.download_folder}")
-
-    def check_clipboard(self):
-        pass
     
     def check_clipboard_on_start(self):
         """Check clipboard for YouTube links on startup"""
@@ -388,19 +358,6 @@ class YouTubeToMP3Converter(ctk.CTk):
             pass
         except Exception as e:
             print(f"Clipboard check error: {e}")
-    
-    def cancel_download_action(self):
-        """Cancel download"""
-        self.cancel_download = True
-        self.update_status("Cancelled by user", self.colors["error"])
-        self.cancel_btn.configure(state="disabled")
-        self.download_btn.configure(state="normal", text="⬇  Convert to MP3")
-        self.progress_bar.set(0)
-        
-        self.after(2000, lambda: [
-            self.progress_container.grid_forget(),
-            self.update_status("")
-        ])
     
     def start_download_thread(self):
         if self.is_downloading:
@@ -420,7 +377,6 @@ class YouTubeToMP3Converter(ctk.CTk):
             )
             return
         
-        self.cancel_download = False
         thread = threading.Thread(target=self.download_mp3)
         thread.daemon = True
         thread.start()
@@ -465,7 +421,6 @@ class YouTubeToMP3Converter(ctk.CTk):
         
         self.is_downloading = True
         self.download_btn.configure(state="disabled", text="⏳ Downloading...")
-        self.cancel_btn.configure(state="normal")
         
         self.progress_container.grid(row=4, column=0, padx=200, pady=10, sticky="ew")
         self.progress_bar.set(0)
@@ -504,19 +459,9 @@ class YouTubeToMP3Converter(ctk.CTk):
             }
             
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                if self.cancel_download:
-                    return
-                
                 info = ydl.extract_info(url, download=True)
-                
-                if self.cancel_download:
-                    return
-                
                 filename = ydl.prepare_filename(info)
                 title = info.get('title', 'audio')
-            
-            if self.cancel_download:
-                return
             
             self.progress_bar.set(1.0)
             self.update_status(f"✓ Done! Saved: {title[:50]}", self.colors["success"])
@@ -532,40 +477,37 @@ class YouTubeToMP3Converter(ctk.CTk):
             ])
             
         except Exception as e:
-            if not self.cancel_download:
-                self.progress_bar.set(0)
-                error_str = str(e).lower()
-                
-                if "private" in error_str or "unavailable" in error_str:
-                    error_msg = "Video unavailable or private"
-                elif "copyright" in error_str:
-                    error_msg = "Video is copyrighted"
-                elif "nodename" in error_str or "network" in error_str or "connection" in error_str or "errno 8" in error_str:
-                    error_msg = "❌ Connection problem"
-                    self.update_status(error_msg, self.colors["error"])
-                    retry = messagebox.askyesno(
-                        "Connection Error",
-                        "Failed to connect to YouTube.\n\nPossible causes:\n• No internet connection\n• DNS problems\n• YouTube unavailable\n\nTry again?",
-                        icon='warning'
-                    )
-                    if retry:
-                        self.after(500, self.start_download_thread)
-                    return
-                elif "age" in error_str:
-                    error_msg = "Authorization required (age restrictions)"
-                else:
-                    error_msg = str(e)[:60]
-                
-                self.update_status(f"❌ Error: {error_msg}", self.colors["error"])
-                print(f"Download error: {e}")                
-                self.after(5000, lambda: [
-                    self.progress_container.grid_forget(),
-                    self.update_status("")
-                ])        
+            self.progress_bar.set(0)
+            error_str = str(e).lower()
+            
+            if "private" in error_str or "unavailable" in error_str:
+                error_msg = "Video unavailable or private"
+            elif "copyright" in error_str:
+                error_msg = "Video is copyrighted"
+            elif "nodename" in error_str or "network" in error_str or "connection" in error_str or "errno 8" in error_str:
+                error_msg = "❌ Connection problem"
+                self.update_status(error_msg, self.colors["error"])
+                retry = messagebox.askyesno(
+                    "Connection Error",
+                    "Failed to connect to YouTube.\n\nPossible causes:\n• No internet connection\n• DNS problems\n• YouTube unavailable\n\nTry again?",
+                    icon='warning'
+                )
+                if retry:
+                    self.after(500, self.start_download_thread)
+                return
+            elif "age" in error_str:
+                error_msg = "Authorization required (age restrictions)"
+            else:
+                error_msg = str(e)[:60]
+            
+            self.update_status(f"❌ Error: {error_msg}", self.colors["error"])
+            print(f"Download error: {e}")
+            self.after(5000, lambda: [
+                self.progress_container.grid_forget(),
+                self.update_status("")
+            ])
         finally:
             self.is_downloading = False
-            self.cancel_download = False
-            self.cancel_btn.configure(state="disabled")
             self.download_btn.configure(state="normal", text="⬇  Convert to MP3")
 
 
